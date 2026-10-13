@@ -1,0 +1,265 @@
+# clipforge — configuración global. TODO parametrizable desde aquí.
+# Los valores por defecto viven en clipforge/config.py; este fichero los sobreescribe.
+
+paths:
+  input_raw: input/raw
+  input_manual: input/manual          # CSVs manuales de tendencias (fase 3)
+  output_pending: output/pending
+  output_approved: output/approved
+  output_rejected: output/rejected
+  output_thumbs: output/thumbs
+  cache_dir: data/cache
+  logs_dir: data/logs
+  db_path: data/clipforge.db
+
+ingest:
+  # Extensiones que se consideran vídeo al escanear input/raw/
+  extensions: [".mp4", ".mkv", ".mov", ".avi", ".m4v", ".webm"]
+  # Hash parcial: primeros y últimos N bytes + tamaño. Mucho más rápido que hashear 8 GB.
+  hash_chunk_bytes: 8388608           # 8 MiB por extremo
+  hash_full: false                    # true = sha256 del fichero entero (lento, exacto)
+  min_duration_s: 600                 # ignora ficheros de menos de 10 min
+  # Ruido a eliminar del nombre de fichero al deducir el título de la película.
+  title_strip_patterns:
+    - "(?i)\\b(1080p|720p|2160p|480p|4k|uhd|hd|sd)\\b"
+    - "(?i)\\b(bluray|blu-ray|brrip|bdrip|webrip|web-dl|webdl|hdrip|dvdrip|hdtv|remux)\\b"
+    - "(?i)\\b(hdr10\\+?|hdr|sdr|dolby[._ ]?vision|imax|hq|3d)\\b"
+    - "(?i)\\b(x264|x265|h264|h265|hevc|avc|xvid|divx|10bit|8bit)\\b"
+    - "(?i)\\b(aac|ac3|dts|ddp?5[._ ]?1|truehd|atmos|mp3|flac)\\b"
+    - "(?i)\\b(dual|multi|latino|castellano|spanish|español|espanol|vose|subs?|eng|ita|fra)\\b"
+    - "(?i)\\b(extended|unrated|remastered|directors?[._ ]cut|theatrical|proper|repack)\\b"
+    - "(?i)\\[[^\\]]*\\]"             # [grupo]
+    - "(?i)\\{[^}]*\\}"
+    - "(?i)\\([^)]*\\)"               # (cualquier cosa) salvo el año, que se extrae antes
+  title_year_pattern: "(19\\d{2}|20\\d{2})"
+
+scenes:
+  detector: content                   # content | adaptive
+  threshold: 27.0                     # ContentDetector threshold
+  min_scene_len_s: 0.8
+  downscale_factor: 4                 # acelera la detección
+  # Agrupación de planos en segmentos candidatos
+  segment_min_s: 150
+  segment_max_s: 260
+  segment_target_s: 200
+  # Nunca cortar a mitad de plano: los límites siempre caen en fronteras de plano.
+  # Descarte de créditos / negro
+  black_luma_threshold: 18.0          # media de luminancia 0-255 por debajo = "negro"
+  max_dark_ratio: 0.45                # >45% del segmento oscuro -> descartar
+  luma_sample_fps: 0.5                # muestreo de luminancia (frames por segundo)
+  skip_head_ratio: 0.02               # ignora el 2% inicial (logos de estudio)
+  skip_tail_ratio: 0.06               # ignora el 6% final (créditos)
+
+transcribe:
+  model: small                        # tiny|base|small|medium|large-v3
+  device: auto                        # auto|cpu|cuda
+  compute_type: auto                  # auto|int8|int8_float16|float16|float32
+  language: null                      # null = autodetectar
+  beam_size: 5
+  vad_filter: true
+  word_timestamps: true               # IMPRESCINDIBLE — no desactivar
+  cache: true
+
+audio:
+  sample_rate: 16000
+  frame_s: 1.0                        # resolución de las features (1 valor por segundo)
+  # Picos dramáticos: subida brusca de energía tras audio bajo
+  quiet_window_s: 1.0                 # duración mínima de calma previa
+  quiet_rms_percentile: 30            # por debajo de este percentil = "bajo"
+  peak_rms_percentile: 80             # por encima = "alto"
+  peak_delta_db: 8.0                  # subida mínima en dB para considerarlo pico
+  peak_min_gap_s: 4.0                 # no dos picos a menos de 4 s
+  # Silencios para el recorte de tiempos muertos
+  silence_min_ms: 400
+  silence_top_db: 35                  # umbral relativo de librosa.effects.split
+  onset_backtrack: true
+
+scoring:
+  model: claude-sonnet-4-6
+  max_tokens: 2000
+  # (sin temperature: los modelos 4.6+ no aceptan parámetros de sampling)
+  concurrency: 3                      # llamadas simultáneas máximas
+  max_retries: 4
+  backoff_base_s: 2.0
+  backoff_max_s: 30.0
+  transcript_char_budget: 6000        # recorte del contexto de transcripción por segmento
+  rehooks_min: 6
+  rehooks_max: 8
+  # Mapa previo de escenas icónicas para priorizar zonas del vídeo
+  iconic_scenes:
+    enabled: true
+    max_scenes: 12
+    priority_window_s: 180            # radio alrededor del minuto sugerido
+    fallback_analyze_all: true        # si no reconoce el título, analiza todo
+  # Pesos del score total (se normalizan a 1 automáticamente)
+  weights:
+    hook_strength: 0.25
+    emotional_peak: 0.15
+    standalone_clarity: 0.20
+    quotability: 0.10
+    visual_interest: 0.10
+    sustains_3min: 0.20
+
+edit:
+  target_w: 1080
+  target_h: 1920
+  fps: 30
+  video_codec: libx264
+  preset: medium
+  crf: 20
+  audio_codec: aac
+  audio_bitrate: 160k
+
+  # a) recorte de tiempos muertos
+  dead_air:
+    enabled: true
+    silence_min_ms: 400               # silencios más largos que esto se recortan
+    keep_breath_ms: 150               # respiración que se deja
+    max_cut_ratio: 0.35               # nunca recortar más del 35% del segmento
+    final_min_s: 170
+    final_max_s: 200
+
+  # b) cold open
+  cold_open:
+    enabled: true
+    duration_s: 1.5
+    hook_text_font_size: 78
+    hook_text_max_chars_per_line: 22
+    flash_cut: true                   # corte seco al inicio real tras el cold open
+
+  # c) crop dinámico 9:16
+  crop:
+    mode: dynamic                     # dynamic | center
+    sample_every_n_frames: 10
+    detector: haar                    # haar | dnn
+    haar_cascade: haarcascade_frontalface_default.xml
+    dnn_proto: null
+    dnn_model: null
+    min_face_size: 60
+    smoothing_window: 25              # media móvil sobre los centros muestreados
+    max_pan_px_per_s: 220             # límite de velocidad del paneo
+    speaker_switch:
+      enabled: true
+      min_hold_s: 1.2                 # no alternar encuadre más rápido que esto
+    fallback: center
+
+  # d) subtítulos quemados
+  subtitles:
+    enabled: true
+    max_words_per_line: 3
+    font: "Montserrat ExtraBold"
+    font_file: null                   # ruta a .ttf; null = deja que libass resuelva por nombre
+    font_size: 68
+    primary_color: "&H00FFFFFF"       # blanco (formato ASS &HAABBGGRR)
+    active_color: "&H0000E5FF"        # amarillo para la palabra activa
+    outline_color: "&H00000000"
+    outline: 4
+    shadow: 2
+    bold: true
+    uppercase: true
+    # ZONA SEGURA (crítica): la UI de TikTok tapa arriba y abajo
+    safe_top_px: 150
+    safe_bottom_px: 300
+    vertical_anchor: 0.55             # 0=arriba de la zona segura, 1=abajo. 0.55 ≈ centro-bajo
+
+  # e) re-hooks
+  rehooks:
+    enabled: true
+    count: 7                          # se recorta a lo que devuelva el modelo
+    alternate: true                   # alterna texto <-> zoom punch
+    text_duration_s: 1.6
+    text_font_size: 60
+    text_slide_in: true
+    zoom_punch_pct: 4                 # 3-5%
+    zoom_punch_ms: 300
+    snap_to_audio_peak_s: 0.6         # imanta el zoom al pico dramático más cercano
+
+  # f) audio
+  audio_chain:
+    loudnorm_i: -14                   # LUFS
+    loudnorm_tp: -1.0
+    loudnorm_lra: 7
+    compressor:
+      enabled: true
+      aggressiveness: high            # low | medium | high
+      threshold_db: -22
+      ratio: 6
+      attack_ms: 5
+      release_ms: 120
+      makeup_db: 3
+    dialogue_boost:
+      enabled: true
+      freq_hz: 2200
+      width_hz: 1800
+      gain_db: 3.5
+    highpass_hz: 80
+
+  # g) final
+  ending:
+    mode: cut_before_resolution       # cut_before_resolution | continuity_text | none
+    cut_before_s: 1.5
+    continuity_text: "La escena sigue…"
+
+  # h) thumbnail
+  thumbnail:
+    enabled: true
+    strategy: peak_frame              # peak_frame | cold_open | midpoint
+    width: 1080
+
+cleanup:
+  delete_source: true                 # borra input/raw/<vídeo> tras renderizar TODO sin errores
+  require_all_clips_ok: true
+  min_output_bytes: 1024
+  keep_source_extensions: []          # extensiones que nunca se borran
+
+daily:
+  auto_queue: 3                       # títulos que se marcan solos como "pendiente de descargar"
+  render_top: 6                       # clips por vídeo en el procesado automático
+  keep_source: true                   # no borra el original hasta que lo pongas en false
+  analyze_top: 0                      # 0 = puntuar todos los segmentos candidatos
+
+review:
+  host: 0.0.0.0                       # 0.0.0.0 para entrar desde el móvil por IP local
+  port: 8000
+  autoplay: true
+  reject_reasons:
+    - mal encuadre
+    - aburrido
+    - subtítulos tapados
+    - mal corte
+    - otro
+
+trends:
+  sources:
+    manual_csv: true                  # SIEMPRE primero; el resto son opcionales
+    seed_llm: true                    # siembra candidatos nuevos con el modelo (1 llamada/mes)
+    justwatch: false
+    pytrends: true
+    tiktok_cc: false
+    reddit: false
+    letterboxd: false
+    anniversaries: true
+  country: ES
+  language: es
+  trend_window_days: 7
+  seed_count: 20                      # títulos que pide seed_llm por mes
+  anniversary_marks: [10, 20, 25, 30]
+  anniversary_window_days: 30
+  release_dates_csv: input/manual/release_dates.csv
+  manual_csv: input/manual/trending.csv
+  default_saturation: 0.5             # 0..1, se usa si una fuente no la aporta
+  request_timeout_s: 15
+  cache_ttl_hours: 12
+
+logging:
+  level: INFO
+  rich_tracebacks: true
+  file: data/logs/clipforge.log
+  progress_bars: true
+
+runtime:
+  ffmpeg: ffmpeg
+  ffprobe: ffprobe
+  tmp_dir: data/cache/tmp
+  ffmpeg_threads: 0                   # 0 = auto
+  fail_fast: false                    # un vídeo que falla no tumba el lote

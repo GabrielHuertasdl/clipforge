@@ -1,0 +1,33 @@
+{% for row in rows %}
+{% if not (hide_processed and row.processed) %}
+<tr class="{{ 'processed' if row.processed else '' }}">
+  <td>
+    <b>{{ row.title }}</b>{% if row.year %} <span class="muted">({{ row.year }})</span>{% endif %}
+    <div class="muted small">{{ row.sources | join(' · ') }}</div>
+  </td>
+  <td class="num"><b>{{ '%.0f'|format(row.score) }}</b></td>
+  <td class="num">{{ '%.0f'|format(row.trend_slope) }}</td>
+  <td class="num">{{ '%.2f'|format(row.saturation) }}</td>
+  <td>{{ row.top_source }}</td>
+  <td>
+    {% if row.processed %}<span class="badge done">procesada</span>
+    {% elif row.status == 'to_download' %}<span class="badge queued">pendiente de descargar</span>
+    {% elif row.status == 'ignored' %}<span class="badge">ignorada</span>
+    {% else %}<span class="badge new">nueva</span>{% endif %}
+  </td>
+  <td class="row-actions">
+    {% if not row.processed %}
+      {% if row.status == 'to_download' %}
+      <button hx-post="/trends/{{ row.slug }}/status" hx-vals='{"status": "new"}'
+              hx-target="#trend-rows" hx-swap="innerHTML" class="small-btn">quitar</button>
+      {% else %}
+      <button hx-post="/trends/{{ row.slug }}/status" hx-vals='{"status": "to_download"}'
+              hx-target="#trend-rows" hx-swap="innerHTML" class="small-btn queue">descargar</button>
+      {% endif %}
+      <button hx-post="/trends/{{ row.slug }}/status" hx-vals='{"status": "ignored"}'
+              hx-target="#trend-rows" hx-swap="innerHTML" class="small-btn">ignorar</button>
+    {% endif %}
+  </td>
+</tr>
+{% endif %}
+{% endfor %}

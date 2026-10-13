@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>clipforge · tendencias</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body class="stats-page">
+  <main class="wide">
+    <h1>Tendencias</h1>
+    <p class="muted">
+      score = pendiente × (1 / saturación) × densidad de escenas icónicas ·
+      <a href="/">revisar clips</a> · <a href="/stats">stats</a>
+    </p>
+
+    {% if hashtags %}
+    <div class="hashtags">
+      {% for tag in hashtags %}<span class="tag">{{ tag.tag }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="filters">
+      <a href="/trends?sort={{ sort }}&hide_processed={{ 'false' if hide_processed else 'true' }}">
+        {{ 'mostrar procesadas' if hide_processed else 'ocultar procesadas' }}
+      </a>
+    </div>
+
+    <table class="trends">
+      <thead>
+        <tr>
+          {% for key, label in [('title','título'), ('score','score'), ('slope','pendiente'),
+                                ('saturation','saturación'), ('source','señal'),
+                                ('status','estado')] %}
+          <th><a href="/trends?sort={{ key }}&hide_processed={{ 'true' if hide_processed else 'false' }}"
+                 class="{{ 'active' if sort == key else '' }}">{{ label }}</a></th>
+          {% endfor %}
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="trend-rows">
+        {% include "_trend_rows.html" %}
+      </tbody>
+    </table>
+  </main>
+</body>
+</html>

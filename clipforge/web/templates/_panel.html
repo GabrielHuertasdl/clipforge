@@ -1,0 +1,76 @@
+{% if clip %}
+<div class="reviewer" data-uid="{{ clip.uid }}"
+     data-prev="{{ prev_uid or '' }}" data-next="{{ next_uid or '' }}">
+
+  <div class="stage">
+    <video id="player" src="/media/{{ clip.uid }}.mp4" playsinline
+           {% if autoplay %}autoplay{% endif %} loop controls preload="auto"></video>
+    <div class="stage-meta">
+      <span class="pos">{{ position }}/{{ queue_size }}</span>
+      <span class="score">{{ '%.0f'|format(clip.total) }}</span>
+      {% if flash %}<span class="flash">{{ flash }}</span>{% endif %}
+    </div>
+  </div>
+
+  <section class="details">
+    <h1>{{ clip.title }} · <span class="dur">{{ '%.0f'|format(clip.duration_s) }}s</span></h1>
+
+    <div class="scores">
+      {% for key, label in [('hook_strength','hook'), ('emotional_peak','emoción'),
+                            ('standalone_clarity','claridad'), ('quotability','citable'),
+                            ('visual_interest','visual'), ('sustains_3min','aguanta')] %}
+      <div class="score-chip"><b>{{ clip.scores.get(key, '–') }}</b><span>{{ label }}</span></div>
+      {% endfor %}
+    </div>
+
+    {% if clip.hook_text %}<p class="hook">“{{ clip.hook_text }}”</p>{% endif %}
+    {% if clip.reason %}<p class="reason">{{ clip.reason }}</p>{% endif %}
+
+    <form id="approve-form" hx-post="/clip/{{ clip.uid }}/approve"
+          hx-target="#panel" hx-swap="innerHTML">
+      <label for="caption">Caption <kbd>E</kbd></label>
+      <textarea id="caption" name="caption" rows="2">{{ clip.caption }}</textarea>
+      <label for="hashtags">Hashtags</label>
+      <input id="hashtags" name="hashtags" value="{{ clip.hashtags | join(' ') }}">
+      <div class="actions">
+        <button type="submit" class="approve">Aprobar <kbd>A</kbd></button>
+        <button type="button" class="reject" onclick="toggleReasons()">Rechazar <kbd>R</kbd></button>
+      </div>
+    </form>
+
+    <div id="reasons" class="reasons" hidden>
+      {% for reason in reject_reasons %}
+      <button hx-post="/clip/{{ clip.uid }}/reject" hx-target="#panel" hx-swap="innerHTML"
+              hx-vals='{"reason": {{ reason | tojson }}}' class="reason-btn">
+        {{ reason }} <kbd>{{ loop.index }}</kbd>
+      </button>
+      {% endfor %}
+    </div>
+
+    <nav class="nav">
+      {% if prev_uid %}
+      <button hx-get="/panel/{{ prev_uid }}" hx-target="#panel" hx-swap="innerHTML">← anterior</button>
+      {% else %}<button disabled>← anterior</button>{% endif %}
+      {% if next_uid %}
+      <button hx-get="/panel/{{ next_uid }}" hx-target="#panel" hx-swap="innerHTML">siguiente →</button>
+      {% else %}<button disabled>siguiente →</button>{% endif %}
+      <a class="stats-link" href="/stats">stats</a>
+    </nav>
+
+    <details class="variants">
+      <summary>variantes aplicadas</summary>
+      <ul>
+        {% for key, value in clip.variants.items() %}
+        {% if key != 'rehook_events' %}<li><b>{{ key }}</b>: {{ value }}</li>{% endif %}
+        {% endfor %}
+      </ul>
+    </details>
+  </section>
+</div>
+{% else %}
+<div class="empty">
+  <h1>Nada pendiente</h1>
+  <p>No hay clips en <code>output/pending/</code>.{% if flash %} Último: {{ flash }}.{% endif %}</p>
+  <a href="/stats">ver stats</a>
+</div>
+{% endif %}

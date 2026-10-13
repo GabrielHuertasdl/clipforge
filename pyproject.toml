@@ -1,0 +1,58 @@
+[project]
+name = "clipforge"
+version = "0.1.0"
+description = "Local pipeline: long movie videos -> scored vertical clips ready for manual upload"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "typer>=0.12",
+    "rich>=13.7",
+    "pyyaml>=6.0",
+    "pydantic>=2.7",
+    "sqlmodel>=0.0.22",
+    "scenedetect>=0.6.4",
+    "faster-whisper>=1.0.3",
+    "librosa>=0.10.2",
+    "numpy>=1.26",
+    # OpenCV 5 removed the Haar CascadeClassifier Python bindings used by crop.py
+    "opencv-python>=4.9,<5",
+    "anthropic>=0.40",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27",
+    "pytrends>=4.9.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+clipforge = "clipforge.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["clipforge"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"clipforge/web" = "clipforge/web"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]

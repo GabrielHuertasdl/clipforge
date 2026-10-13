@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.env
+data/clipforge.db
+data/cache/
+data/logs/
+input/raw/*
+!input/raw/.gitkeep
+output/*/*
+!output/*/.gitkeep

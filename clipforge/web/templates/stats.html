@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>clipforge · stats</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="stats-page">
+  <main>
+    <h1>Stats</h1>
+    <div class="big-numbers">
+      <div><b>{{ stats.approval_rate }}%</b><span>aprobación</span></div>
+      <div><b>{{ stats.pending }}</b><span>pendientes</span></div>
+      <div><b>{{ stats.approved }}</b><span>aprobados</span></div>
+      <div><b>{{ stats.rejected }}</b><span>rechazados</span></div>
+    </div>
+    <h2>Scores medios</h2>
+    <ul>
+      <li>todos: <b>{{ stats.avg_score_all }}</b></li>
+      <li>aprobados: <b>{{ stats.avg_score_approved }}</b></li>
+      <li>rechazados: <b>{{ stats.avg_score_rejected }}</b></li>
+    </ul>
+    <h2>Motivos de rechazo</h2>
+    <ul>
+      {% for reason, count in stats.reject_reasons.items() %}
+      <li>{{ reason }}: <b>{{ count }}</b></li>
+      {% else %}<li>ninguno todavía</li>{% endfor %}
+    </ul>
+    <a href="/">← volver a revisar</a>
+  </main>
+</body>
+</html>
