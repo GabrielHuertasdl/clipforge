@@ -1,13 +1,94 @@
 # clipforge
 
-Local pipeline that turns long movie files into short vertical clips optimised for retention,
-scores them with Claude, and hands them to you in a review UI. You supply the videos, you do
-the uploading — clipforge only does the middle part.
+**Local pipeline that turns long-form video you own into short vertical clips: shot detection, word-level transcription, audio analysis, LLM scoring, and an ffmpeg editor — with a mobile-friendly human review step at the end.**
+
+![Python](https://img.shields.io/badge/Python-3.11%20%7C%203.12-3776AB?logo=python&logoColor=white)
+![FFmpeg](https://img.shields.io/badge/FFmpeg-007808?logo=ffmpeg&logoColor=white)
+![faster-whisper](https://img.shields.io/badge/faster--whisper-ASR-4B8BBE)
+![OpenCV](https://img.shields.io/badge/OpenCV-4.x-5C3EE8?logo=opencv&logoColor=white)
+![Anthropic Claude API](https://img.shields.io/badge/Anthropic-Claude%20API-D97757?logo=anthropic&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![htmx](https://img.shields.io/badge/htmx-3366CC?logo=htmx&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLModel-SQLite-003B57?logo=sqlite&logoColor=white)
+![uv](https://img.shields.io/badge/uv-DE5FE9?logo=uv&logoColor=white)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+
+Developed in September 2026.
+
+## Overview
+
+clipforge takes long movie files and produces short 9:16 clips optimised for retention,
+scores them with the Anthropic Claude API, and hands them to you in a review UI. **You supply
+the video files and you do the uploading** — clipforge only does the middle part. You are
+responsible for having the rights to the material you process.
 
 **Out of scope, by design:** no video downloading or scraping, no publishing to any platform,
 no multi-account management. Input comes from `input/raw/`; output stops at `output/approved/`.
 
-## Requirements
+## Key features
+
+- **Shot-aware segmentation** (PySceneDetect) — a segment boundary is always a shot
+  boundary; the pipeline never cuts mid-shot.
+- **Word-level transcription** (faster-whisper with `word_timestamps=True`) driving both the
+  subtitles and the dead-air trimmer.
+- **Audio features** — per-second RMS, silence ratio, onset rate, energy delta and detected
+  dramatic peaks (librosa).
+- **LLM scoring with structured output** — each candidate is scored on six weighted axes
+  (hook strength, emotional peak, standalone clarity, quotability, visual interest, ability
+  to sustain 3 minutes); responses are validated with Pydantic and retried with exponential
+  backoff. An *iconic-scene* map of the film reorders the work so `--top N` scores the
+  promising zones first, and **every verdict is persisted** so weights can be re-tuned
+  without paying for the API again.
+- **ffmpeg editor via subprocess** — dead-air trimming with a single re-timing map, a 1.5 s
+  cold open, dynamic 9:16 crop that follows faces (OpenCV) or motion, burned-in ASS subtitles
+  with per-word highlight inside a safe zone, re-hooks snapped to audio peaks, loudnorm to
+  −14 LUFS, and a thumbnail. Each clip ships with a JSON of the exact variants applied.
+- **Review UI** (FastAPI + Jinja2 + htmx) reachable from a phone on the LAN, with keyboard
+  shortcuts, caption editing, rejection reasons and approval stats.
+- **Trend detector** with pluggable, fail-soft adapters (manual CSV, anniversaries, Google
+  Trends, LLM seeding, and optional community sources).
+- **Safe source cleanup** — originals are deleted only after every clip rendered without a
+  single error, with `--dry-run` and `--keep-source`.
+- **Idempotent and cached** — files are keyed by hash; scenes, transcripts and audio features
+  are cached; everything is recorded in SQLite.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    IN[input/raw/<br/>your video files] --> ING[1 · ingest<br/>hash, probe, title]
+    ING --> SC[2 · scenes<br/>PySceneDetect]
+    ING --> TR[3 · transcribe<br/>faster-whisper]
+    ING --> AU[4 · audio features<br/>librosa]
+    SC --> SCO[5 · scoring<br/>Claude API + Pydantic]
+    TR --> SCO
+    AU --> SCO
+    SCO --> ED[6 · editor<br/>ffmpeg: trim, crop,<br/>subs, re-hooks, loudnorm]
+    ED --> PEN[output/pending/]
+    PEN --> REV[review UI<br/>FastAPI + htmx]
+    REV --> APP[output/approved/]
+    REV --> REJ[output/rejected/]
+    TRD[trend adapters] --> DB[(SQLite)]
+    SCO --> DB
+    ED --> DB
+    REV --> DB
+```
+
+The editor's order of operations (`clipforge/edit.py`):
+
+1. dead-air trim — silences over 400 ms removed, 150 ms of breath kept, with a re-timing map
+   so subtitles and re-hooks keep landing on the right frames;
+2. cold open — 1.5 s taken from the peak-tension frame with the hook text over it;
+3. dynamic 9:16 crop with smoothing and speaker alternation;
+4. burned-in subtitles inside the safe zone;
+5. re-hooks — alternating incoming text and 3-5 % zoom punches snapped to audio peaks;
+6. audio — loudnorm to −14 LUFS, aggressive compression, dialogue lift;
+7. ending — cut before the resolution, or a continuity line;
+8. thumbnail.
+
+## Getting started
+
+### Requirements
 
 - Python 3.11 or 3.12 (3.13+ is not supported yet by faster-whisper/librosa wheels)
 - [uv](https://docs.astral.sh/uv/)
@@ -30,7 +111,7 @@ Install uv:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-## Setup
+### Setup
 
 ```bash
 make setup                      # uv venv + editable install + folder tree
@@ -42,7 +123,7 @@ cp .env.example .env            # then put your real key in it
 — the API rejects those keys with a 400 naming the missing workspace header. Everything else
 runs offline.
 
-## End-to-end example
+### End-to-end example
 
 ```bash
 # 1. Drop a long video into the input folder
@@ -73,7 +154,7 @@ uv run clipforge trends --refresh
 uv run clipforge stats
 ```
 
-## Configuration
+### Configuration
 
 Everything lives in `config.yaml`: scene thresholds, target durations, scoring weights,
 subtitle style and safe zone, Whisper model, number of re-hooks, audio compression
@@ -82,30 +163,11 @@ and the YAML file deep-merges on top, so a partial config is always valid.
 
 Point at a different file with `--config path/to.yaml` or `CLIPFORGE_CONFIG=...`.
 
-## Layout
-
-```
-input/raw/          videos you drop in (deleted after a fully successful render)
-input/manual/       manual CSVs for the trend detector
-output/pending/     rendered clips awaiting review
-output/approved/    approved clips + final caption JSON  <- your upload queue
-output/rejected/    rejected clips + reason
-data/clipforge.db   SQLite: videos, segments, every score, errors, deletions
-data/cache/         transcripts, scene lists, audio features (keyed by file hash)
-```
-
-## Development
-
-```bash
-make test    # pytest
-make lint    # ruff
-make fmt     # ruff --fix + format
-```
-
 ## Review UI
 
 `uv run clipforge review` serves on `0.0.0.0:8000` and prints both URLs, including the LAN one
 so you can review the verticals on your phone.
+The UI has no authentication: run it only on a trusted network.
 
 Keyboard: `A` approve · `R` reject (then `1`-`5` for the reason) · `E` edit the caption
 (`Ctrl`/`Cmd`+`Enter` approves from the textarea) · `←` `→` navigate · `space` play/pause.
@@ -146,7 +208,7 @@ run carries on without it.
 | source | what it measures | default |
 |---|---|---|
 | `manual_csv` | titles you write by hand | on |
-| `seed_llm` | Claude proposes candidate films with a reason, once a month | on |
+| `seed_llm` | the Claude API proposes candidate films with a reason, once a month | on |
 | `anniversaries` | 10/20/25/30 years from release, ±30 days | on |
 | `pytrends` | Google Trends slope over 7 days, `geo=ES` | on |
 | `reddit` | r/movies + r/NetflixBestOf weekly top | off |
@@ -182,8 +244,43 @@ The dashboard lives at `/trends` in the same app: sortable table, a button to ma
 "pendiente de descargar", and films already in the database are greyed out as processed so
 they never get queued twice.
 
+## Development
+
+```bash
+make test    # pytest
+make lint    # ruff
+make fmt     # ruff --fix + format
+```
+
+## Project layout
+
+```
+clipforge/          the package: cli, ingest, scenes, transcribe, audio_features,
+                    scoring, crop, subtitles, retiming, edit, cleanup, trends, daily,
+                    review (+ web/ templates and static), adapters/ (trend sources)
+tests/              pytest suite
+config.yaml         every tunable value
+input/raw/          videos you drop in (deleted after a fully successful render)
+input/manual/       manual CSVs for the trend detector
+output/pending/     rendered clips awaiting review
+output/approved/    approved clips + final caption JSON  <- your upload queue
+output/rejected/    rejected clips + reason
+data/clipforge.db   SQLite: videos, segments, every score, errors, deletions
+data/cache/         transcripts, scene lists, audio features (keyed by file hash)
+```
+
 ## Status
 
 - Phase 1 — engine (modules 1-6): done
 - Phase 2 — review UI: done
 - Phase 3 — trend detector + dashboard: done
+
+## Tech stack
+
+Python 3.11/3.12 · Typer + Rich (CLI) · PySceneDetect · faster-whisper · librosa · NumPy ·
+OpenCV · Anthropic Python SDK · Pydantic · SQLModel/SQLite · FastAPI · Uvicorn · Jinja2 ·
+htmx · httpx · pytrends · ffmpeg · uv · pytest · ruff
+
+## License
+
+[MIT](LICENSE) © 2026 Gabriel Huertas

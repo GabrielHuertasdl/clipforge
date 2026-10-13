@@ -11,3 +11,5 @@ input/raw/*
 !input/raw/.gitkeep
 output/*/*
 !output/*/.gitkeep
+venv/
+*.egg-info/
